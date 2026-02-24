@@ -124,32 +124,60 @@ class PriceTrackerProducer:
             raise
 
     async def run(self):
-        async with websockets.connect(KRAKEN_WS_URL) as self.ws:
-            logger.info(f"Connected to {KRAKEN_WS_URL}")
-            for symbol in KRAKEN_WS_SYMBOLS:
-                await self.subscribe_to_symbol(symbol)
-            try:
-                while True:
-                    message = await self.ws.recv()
-                    await self._send_to_kafka(message)
+        backoff_s = 1.0
+        max_backoff_s = 30.0
 
-            except websockets.ConnectionClosed:
-                logger.warning("WebSocket connection closed")
+        while True:
+            try:
+                async with websockets.connect(KRAKEN_WS_URL) as self.ws:
+                    backoff_s = 1.0  # reset after a successful connect
+                    logger.info(f"Connected to {KRAKEN_WS_URL}")
+
+                    # Subscribe on every (re)connect; keep local state consistent.
+                    self.subscriptions.clear()
+                    for symbol in KRAKEN_WS_SYMBOLS:
+                        await self.subscribe_to_symbol(symbol)
+
+                    while True:
+                        message = await self.ws.recv()
+                        await self._send_to_kafka(message)
+
+            except (websockets.ConnectionClosed, OSError) as e:
+                # Transient network/server disconnects are expected; reconnect with backoff.
+                logger.warning(f"WebSocket disconnected; reconnecting in {backoff_s:.1f}s ({e})")
+                try:
+                    await asyncio.sleep(backoff_s)
+                except asyncio.CancelledError:
+                    logger.info("Cancellation received; shutting down")
+                    break
+                backoff_s = min(max_backoff_s, backoff_s * 2)
+                continue
+
             except KeyboardInterrupt:
-                logger.info("Keyboard interrupt received")
-            except KafkaException as e:
-                logger.error(f"Kafka error: {e}")
-            except Exception as e:
-                logger.exception("Unexpected error in run loop")
-                raise
+                logger.info("Keyboard interrupt received; shutting down")
+                break
+
+            except asyncio.CancelledError:
+                logger.info("Cancellation received; shutting down")
+                break
+
+            except Exception:
+                # Unknown errors should be loud; still flush before exiting.
+                logger.exception("Unexpected error; shutting down")
+                break
+
             finally:
-                for symbol in list(self.subscriptions):
-                    try:
-                        await self.unsubscribe_from_symbol(symbol)
-                    except Exception:
-                        pass
+                # Best-effort cleanup: unsubscribe then flush any buffered Kafka messages.
+                if self.ws is not None:
+                    for symbol in list(self.subscriptions):
+                        try:
+                            await self.unsubscribe_from_symbol(symbol)
+                        except Exception:
+                            pass
                 await asyncio.to_thread(self.producer.flush)
-            logger.info("Price tracker stopped")
+                self.ws = None
+
+        logger.info("Price tracker stopped")
 
 
 async def main():
