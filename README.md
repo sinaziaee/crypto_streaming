@@ -19,6 +19,7 @@ Kraken WebSocket (v2)
 ## ✨ Features
 
 - Real-time price ingestion from Kraken WebSocket API
+- CI/CD pipeline (GitHub Actions)
 - Kafka-based streaming pipeline (using Confluent Kafka locally)
 - Separate topics for raw market data:
   - `crypto.ticker.raw`
