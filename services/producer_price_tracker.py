@@ -3,18 +3,19 @@ import sys
 from pathlib import Path
 from loguru import logger
 
-# Allow imports from project root (config) and services/ (kafka_init) when run from any cwd
-_root = Path(__file__).resolve().parent
-sys.path.insert(0, str(_root.parent))  # project root
-sys.path.insert(0, str(_root))         # services/
-
 import websockets
 from confluent_kafka import Producer, KafkaException
-from config import BOOTSTRAP_SERVERS, PRICE_TRACKER_PRODUCER_CONFIG, TOPIC_CONFIGS
+from config import PRICE_TRACKER_PRODUCER_CONFIG, TOPIC_CONFIGS
 from kafka_init import ensure_topics
 import json
 
 from config import KRAKEN_WS_URL, KRAKEN_WS_SYMBOLS
+
+
+# Allow imports from project root (config) and services/ (kafka_init) when run from any cwd
+_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(_root.parent))  # project root
+sys.path.insert(0, str(_root))  # services/
 
 
 def _delivery_callback(err, msg):
@@ -24,7 +25,13 @@ def _delivery_callback(err, msg):
         key = msg.key() if msg and msg.key() else None
         logger.error(f"Produce failed: topic={topic} key={key!r} error={err}")
     else:
-        logger.debug("Message delivered", topic=msg.topic(), partition=msg.partition(), offset=msg.offset())
+        logger.debug(
+            "Message delivered",
+            topic=msg.topic(),
+            partition=msg.partition(),
+            offset=msg.offset(),
+        )
+
 
 class PriceTrackerProducer:
     def __init__(self):
@@ -74,7 +81,9 @@ class PriceTrackerProducer:
             logger.error(f"Error unsubscribing from {symbol}: {e}")
             raise
 
-    def _produce(self, value: bytes, key: str | None = None, *, topic: str | None = None):
+    def _produce(
+        self, value: bytes, key: str | None = None, *, topic: str | None = None
+    ):
         """Sync produce; run via asyncio.to_thread to avoid blocking the event loop."""
         target_topic = topic or self.topic
         key_bytes = key.encode("utf-8") if key else None
@@ -86,7 +95,9 @@ class PriceTrackerProducer:
                 on_delivery=_delivery_callback,
             )
         except KafkaException as e:
-            logger.error(f"Produce failed (sync): topic={target_topic} key={key!r} error={e}")
+            logger.error(
+                f"Produce failed (sync): topic={target_topic} key={key!r} error={e}"
+            )
             return
         self.producer.poll(0)  # invoke delivery callbacks
 
@@ -101,14 +112,21 @@ class PriceTrackerProducer:
             # Control channels → dedicated topic (heartbeat, status, etc.)
             if channel in ("heartbeat", "status"):
                 await asyncio.to_thread(
-                    self._produce, message.encode("utf-8"), key=channel, topic=self.control_topic
+                    self._produce,
+                    message.encode("utf-8"),
+                    key=channel,
+                    topic=self.control_topic,
                 )
                 return
             # Ticker (and any other business channels) → main topic
             # Use symbol as key for partitioning (same symbol -> same partition)
             key = None
             payload = data.get("data")
-            if isinstance(payload, list) and len(payload) > 0 and isinstance(payload[0], dict):
+            if (
+                isinstance(payload, list)
+                and len(payload) > 0
+                and isinstance(payload[0], dict)
+            ):
                 key = payload[0].get("symbol") or payload[0].get("pair")
             elif "symbol" in data:
                 key = data["symbol"]
@@ -144,7 +162,9 @@ class PriceTrackerProducer:
 
             except (websockets.ConnectionClosed, OSError) as e:
                 # Transient network/server disconnects are expected; reconnect with backoff.
-                logger.warning(f"WebSocket disconnected; reconnecting in {backoff_s:.1f}s ({e})")
+                logger.warning(
+                    f"WebSocket disconnected; reconnecting in {backoff_s:.1f}s ({e})"
+                )
                 try:
                     await asyncio.sleep(backoff_s)
                 except asyncio.CancelledError:

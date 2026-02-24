@@ -1,0 +1,60 @@
+name: ci-pipeline
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Sync dev dependencies
+        run: uv sync --extra dev
+
+      - name: Run pre-commit
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+  merge-to-integration:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch integration branch
+        run: |
+          git fetch origin integration:refs/remotes/origin/integration
+
+      - name: Require integration merged into this branch
+        run: |
+          set -euo pipefail
+          if git merge-base --is-ancestor origin/integration HEAD; then
+            echo "✅ integration is merged into this branch."
+          else
+            echo "❌ This PR branch is missing the latest integration."
+            echo "Merge integration into your branch, then push again."
+            exit 1
+          fi

@@ -8,10 +8,10 @@ This project is designed as a production-style system to demonstrate real-time d
 
 ## 🏗️ Architecture (Phase 1)
 
-Kraken WebSocket (v2)  
-→ WS Ingestor (Python)  
-→ Kafka (Confluent Kafka)  
-→ Stream Consumers (analytics / features / debug)  
+Kraken WebSocket (v2)
+→ WS Ingestor (Python)
+→ Kafka (Confluent Kafka)
+→ Stream Consumers (analytics / features / debug)
 → (Future) ML Inference Service
 
 ---
@@ -75,3 +75,10 @@ Kraken WebSocket (v2)
 
 ```bash
 docker compose up -d
+```
+
+### 2) Dev setup (uv + pre-commit)
+
+```bash
+bash scripts/dev-setup.sh
+```
