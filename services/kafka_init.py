@@ -15,9 +15,9 @@ def ensure_topics():
 
     for _, config in TOPIC_CONFIGS.items():
         extra_config = {
-            "retention_ms": config["retention_ms"],
-            "cleanup_policy": config["cleanup_policy"],
-            "retention_bytes": config["retention_bytes"],
+            "retention.ms": config["retention_ms"],
+            "cleanup.policy": config["cleanup_policy"],
+            "retention.bytes": config["retention_bytes"],
         }
         new_topics.append(NewTopic(topic=config["topic"], num_partitions=config["num_partitions"], replication_factor=config["replication_factor"], config=extra_config))
         print(f"Creating topic {config['topic']} with {config['num_partitions']} partitions and {config['replication_factor']} replication factor")
