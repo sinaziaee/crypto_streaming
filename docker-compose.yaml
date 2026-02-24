@@ -1,0 +1,46 @@
+# Docker Compose for local Kafka (KRaft) + Kafka UI
+services:
+  # Apache Kafka broker (Confluent Platform, KRaft mode — no ZooKeeper)
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    # 9092: host access (clients), 29092: inter-container (e.g. kafka-ui)
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+
+      # KRAFT MODE CONFIG — single-node KRaft (replaces ZooKeeper)
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker, controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # LISTENER CONFIG — PLAINTEXT for dev; CONTROLLER for KRaft quorum (port must match QUORUM_VOTERS)
+      KAFKA_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://kafka:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Single-node dev: replication factor 1, no rebalance delay
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Required for KRaft cluster bootstrap
+      CLUSTER_ID: "some-id1"
+
+  # Web UI for managing and inspecting Kafka (topics, messages, consumer groups)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS: kafka:29092
