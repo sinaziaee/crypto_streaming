@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from pathlib import Path
+from loguru import logger
 
 # Allow imports from project root (config) and services/ (kafka_init) when run from any cwd
 _root = Path(__file__).resolve().parent
@@ -21,9 +22,9 @@ def _delivery_callback(err, msg):
     if err is not None:
         topic = msg.topic() if msg else "?"
         key = msg.key() if msg and msg.key() else None
-        print(f"Produce failed: topic={topic} key={key!r} error={err}")
+        logger.error(f"Produce failed: topic={topic} key={key!r} error={err}")
     else:
-        print(f"Produced: {msg.value()}")
+        logger.debug("Message delivered", topic=msg.topic(), partition=msg.partition(), offset=msg.offset())
 
 class PriceTrackerProducer:
     def __init__(self):
@@ -48,11 +49,11 @@ class PriceTrackerProducer:
                 "req_id": self.req_id,
             }
             await self.ws.send(json.dumps(req))
-            print(f"Subscribed to {symbol}")
+            logger.info(f"Subscribed to {symbol}")
             self.subscriptions.add(symbol)
             self.req_id += 1
         except Exception as e:
-            print(f"Error subscribing to {symbol}: {e}")
+            logger.error(f"Error subscribing to {symbol}: {e}")
             raise
 
     async def unsubscribe_from_symbol(self, symbol: str):
@@ -66,11 +67,11 @@ class PriceTrackerProducer:
                 "req_id": self.req_id,
             }
             await self.ws.send(json.dumps(req))
-            print(f"Unsubscribed from {symbol}")
+            logger.info(f"Unsubscribed from {symbol}")
             self.subscriptions.remove(symbol)
             self.req_id += 1
         except Exception as e:
-            print(f"Error unsubscribing from {symbol}: {e}")
+            logger.error(f"Error unsubscribing from {symbol}: {e}")
             raise
 
     def _produce(self, value: bytes, key: str | None = None, *, topic: str | None = None):
@@ -85,7 +86,7 @@ class PriceTrackerProducer:
                 on_delivery=_delivery_callback,
             )
         except KafkaException as e:
-            print(f"Produce failed (sync): topic={target_topic} key={key!r} error={e}")
+            logger.error(f"Produce failed (sync): topic={target_topic} key={key!r} error={e}")
             return
         self.producer.poll(0)  # invoke delivery callbacks
 
@@ -117,24 +118,24 @@ class PriceTrackerProducer:
         except json.JSONDecodeError:
             await asyncio.to_thread(self._produce, message.encode("utf-8"), None)
         except Exception as e:
-            print(f"Error producing to Kafka: {e}")
+            logger.error(f"Error in _send_to_kafka: {e}")
 
     async def run(self):
         async with websockets.connect(KRAKEN_WS_URL) as self.ws:
-            print(f"Connected to {KRAKEN_WS_URL}")
+            logger.info(f"Connected to {KRAKEN_WS_URL}")
             for symbol in KRAKEN_WS_SYMBOLS:
                 await self.subscribe_to_symbol(symbol)
             try:
                 while True:
                     message = await self.ws.recv()
                     await self._send_to_kafka(message)
-                    
+
             except websockets.ConnectionClosed:
-                print("WebSocket connection closed")
+                logger.warning("WebSocket connection closed")
             except KeyboardInterrupt as e:
-                print("Keyboard interrupt received")
+                logger.info("Keyboard interrupt received")
             except Exception as e:
-                print(f"Error producing to Kafka: {e}")
+                logger.error(f"Error in run loop: {e}")
             finally:
                 for symbol in list(self.subscriptions):
                     try:
@@ -142,7 +143,7 @@ class PriceTrackerProducer:
                     except Exception:
                         pass
                 await asyncio.to_thread(self.producer.flush)
-            print("Price tracker stopped")
+            logger.info("Price tracker stopped")
 
 
 async def main():
