@@ -117,8 +117,11 @@ class PriceTrackerProducer:
             await asyncio.to_thread(self._produce, message.encode("utf-8"), key)
         except json.JSONDecodeError:
             await asyncio.to_thread(self._produce, message.encode("utf-8"), None)
+        except KafkaException as e:
+            logger.error(f"Error producing to Kafka: {e}")
         except Exception as e:
-            logger.error(f"Error in _send_to_kafka: {e}")
+            logger.error(f"Error processing message: {e}")
+            raise
 
     async def run(self):
         async with websockets.connect(KRAKEN_WS_URL) as self.ws:
@@ -132,10 +135,13 @@ class PriceTrackerProducer:
 
             except websockets.ConnectionClosed:
                 logger.warning("WebSocket connection closed")
-            except KeyboardInterrupt as e:
+            except KeyboardInterrupt:
                 logger.info("Keyboard interrupt received")
+            except KafkaException as e:
+                logger.error(f"Kafka error: {e}")
             except Exception as e:
-                logger.error(f"Error in run loop: {e}")
+                logger.exception("Unexpected error in run loop")
+                raise
             finally:
                 for symbol in list(self.subscriptions):
                     try:
