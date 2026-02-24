@@ -11,25 +11,16 @@ def ensure_topics():
     }
     admin = AdminClient(admin_config)
 
-    new_topics = [
-        NewTopic(topic, num_partitions=config["num_partitions"], replication_factor=config["replication_factor"])
-        for topic, config in TOPIC_CONFIGS.items()
-    ]
+    new_topics = []
 
-
-    fs = admin.create_topics(new_topics, request_timeout=15)
-
-    for topic, f in fs.items():
-        try:
-            f.result()
-            print(f'Topic {topic} created')
-        except KafkaException as e:
-            # if topic already exists, ignore the error
-            if "TOPIC_ALREADY_EXISTS" in str(e):
-                print(f"✅ Topic created: {topic}")
-            else:
-                print(f"❌ Failed to create topic {topic}: {e}")
-                raise
+    for _, config in TOPIC_CONFIGS.items():
+        extra_config = {
+            "retention_ms": config["retention_ms"],
+            "cleanup_policy": config["cleanup_policy"],
+            "retention_bytes": config["retention_bytes"],
+        }
+        new_topics.append(NewTopic(topic=config["topic"], num_partitions=config["num_partitions"], replication_factor=config["replication_factor"], config=extra_config))
+        print(f"Creating topic {config['topic']} with {config['num_partitions']} partitions and {config['replication_factor']} replication factor")
 
 if __name__ == "__main__":
     ensure_topics()
