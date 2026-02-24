@@ -8,13 +8,22 @@ sys.path.insert(0, str(_root.parent))  # project root
 sys.path.insert(0, str(_root))         # services/
 
 import websockets
-from confluent_kafka import Producer
+from confluent_kafka import Producer, KafkaException
 from config import BOOTSTRAP_SERVERS, PRICE_TRACKER_PRODUCER_CONFIG, TOPIC_CONFIGS
 from kafka_init import ensure_topics
 import json
 
 from config import KRAKEN_WS_URL, KRAKEN_WS_SYMBOLS
 
+
+def _delivery_callback(err, msg):
+    """Called once per message when produce() result is known (from poll/flush)."""
+    if err is not None:
+        topic = msg.topic() if msg else "?"
+        key = msg.key() if msg and msg.key() else None
+        print(f"Produce failed: topic={topic} key={key!r} error={err}")
+    else:
+        print(f"Produced: {msg.value()}")
 
 class PriceTrackerProducer:
     def __init__(self):
@@ -66,12 +75,19 @@ class PriceTrackerProducer:
 
     def _produce(self, value: bytes, key: str | None = None, *, topic: str | None = None):
         """Sync produce; run via asyncio.to_thread to avoid blocking the event loop."""
-        self.producer.produce(
-            topic=topic or self.topic,
-            value=value,
-            key=key.encode("utf-8") if key else None,
-        )
-        self.producer.poll(0)  # serve delivery callbacks
+        target_topic = topic or self.topic
+        key_bytes = key.encode("utf-8") if key else None
+        try:
+            self.producer.produce(
+                topic=target_topic,
+                value=value,
+                key=key_bytes,
+                on_delivery=_delivery_callback,
+            )
+        except KafkaException as e:
+            print(f"Produce failed (sync): topic={target_topic} key={key!r} error={e}")
+            return
+        self.producer.poll(0)  # invoke delivery callbacks
 
     async def _send_to_kafka(self, message: str):
         """Parse message and produce to the appropriate topic (ticker vs control)."""
@@ -112,7 +128,7 @@ class PriceTrackerProducer:
                 while True:
                     message = await self.ws.recv()
                     await self._send_to_kafka(message)
-                    print(f"Received: {message}")
+                    
             except websockets.ConnectionClosed:
                 print("WebSocket connection closed")
             except KeyboardInterrupt as e:
