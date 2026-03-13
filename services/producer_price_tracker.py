@@ -1,6 +1,4 @@
 import asyncio
-import sys
-from pathlib import Path
 from loguru import logger
 
 import websockets
@@ -10,12 +8,6 @@ from kafka_init import ensure_topics
 import json
 
 from config import KRAKEN_WS_URL, KRAKEN_WS_SYMBOLS
-
-
-# Allow imports from project root (config) and services/ (kafka_init) when run from any cwd
-_root = Path(__file__).resolve().parent
-sys.path.insert(0, str(_root.parent))  # project root
-sys.path.insert(0, str(_root))  # services/
 
 
 def _delivery_callback(err, msg):

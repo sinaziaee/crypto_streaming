@@ -29,3 +29,9 @@ PRICE_TRACKER_PRODUCER_CONFIG = {
 KRAKEN_WS_URL = "wss://ws.kraken.com/v2"
 
 KRAKEN_WS_SYMBOLS = ["BTC/USD", "ETH/USD", "XRP/USD"]
+
+LOG_CONSUMER_CONFIG = {
+    "bootstrap.servers": BOOTSTRAP_SERVERS,
+    "group.id": "log-consumer",
+    "auto.offset.reset": "earliest",
+}
